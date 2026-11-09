@@ -1,0 +1,42 @@
+# Local development stack.
+#
+# One Postgres instance. No tile server: Benguet has 13 municipalities, so
+# GeoJSON straight from PostGIS is the right answer and a tile server would be
+# an operational surface for a problem this project does not have.
+#
+# Credentials come from .env and are never written here. Copy .env.example.
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-terra}
+    ports:
+      - "5432:5432"
+    volumes:
+      - terra_pgdata:/var/lib/postgresql/data
+      - ./backend/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terra} -d ${POSTGRES_DB:-terra}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: ./backend
+    environment:
+      TERRA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-terra}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-terra}
+      TERRA_CORS_ORIGINS: http://localhost:5173
+      TERRA_RAW_DIR: /data/raw
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  terra_pgdata:
