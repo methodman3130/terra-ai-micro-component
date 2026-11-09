@@ -11,7 +11,10 @@ import AdminPanel from "./components/AdminPanel";
 import { Brand, PineRule } from "./components/Brand";
 
 const BENGUET = "1401100000"; // PSGC: province digits are positions 3-5
-const COMMODITIES = ["Cabbage", "Carrot"];
+// Commodities are whatever the register actually holds. Hard-coding them meant
+// Potato was loaded but unreachable from the UI, and every new crop needed a
+// frontend release to become visible.
+const FALLBACK_COMMODITIES = ["Cabbage", "Carrot", "Potato"];
 const VARIABLES = [
   { key: "farmgate_price", label: "Farmgate price" },
   { key: "production", label: "Production" },
@@ -44,7 +47,8 @@ function Panel() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [health, setHealth] = useState(null);
-  const [commodity, setCommodity] = useState(COMMODITIES[0]);
+  const [commodities, setCommodities] = useState(FALLBACK_COMMODITIES);
+  const [commodity, setCommodity] = useState(FALLBACK_COMMODITIES[0]);
   const [variable, setVariable] = useState("farmgate_price");
   const [geo, setGeo] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -58,6 +62,19 @@ function Panel() {
   useEffect(() => {
     api.notice().then(setNotice).catch(() => {});
     api.health().then(setHealth).catch(() => setHealth({ database: "unavailable" }));
+    // Populate the picker from the series register rather than a constant, so
+    // loading a new crop makes it selectable without a frontend release. The
+    // fallback only covers the case where /series is unreachable.
+    api
+      .series()
+      .then((r) => {
+        const names = [...new Set((r.series ?? []).map((s) => s.commodity))].sort();
+        if (names.length) {
+          setCommodities(names);
+          setCommodity((c) => (names.includes(c) ? c : names[0]));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -113,7 +130,7 @@ function Panel() {
               onChange={(e) => setCommodity(e.target.value)}
               className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-uc-green focus:outline-none"
             >
-              {COMMODITIES.map((c) => (
+              {commodities.map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
