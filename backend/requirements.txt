@@ -1,0 +1,16 @@
+# API runtime only. Kept deliberately small because serverless platforms cap
+# the deployed bundle (Vercel: 500 MB uncompressed for Python) and the heavy
+# scientific stack is needed by the ETL and benchmark scripts, not by the API.
+#
+# Verified: app.main imports and serves with numpy, pandas, scikit-learn,
+# statsforecast, statsmodels and requests all absent. The forecasting modules
+# import those lazily, inside the functions that use them.
+#
+# For the ETL and benchmark, install requirements-etl.txt as well.
+
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.8
+psycopg[binary]==3.2.12
+PyJWT==2.15.0
+pydantic[email]==2.13.5

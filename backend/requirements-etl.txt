@@ -1,0 +1,21 @@
+# Retrieval, cleaning and benchmarking. Install alongside requirements.txt on
+# the machine that runs the scripts - not on the API host.
+#
+# These must never be installed into a serverless API bundle: they are large,
+# and nothing the API serves needs them at import time.
+
+-r requirements.txt
+
+requests==2.34.2
+pandas==3.0.5
+numpy==2.5.3
+scikit-learn==1.9.1
+
+# Candidate models. The mandatory baselines are implemented natively and run
+# without these, so a failed install degrades the study rather than stopping it.
+statsforecast==2.0.2
+statsmodels==0.14.6
+
+# Dev
+pytest==9.1.1
+httpx==0.28.1

@@ -1,0 +1,25 @@
+# Credentials
+.env
+*.pem
+
+# The 1.1 GB problem: generated data never enters the repo
+data/
+*.csv
+!backend/tests/**/*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+ai_env/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
