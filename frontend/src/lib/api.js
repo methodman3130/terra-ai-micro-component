@@ -53,6 +53,12 @@ export const api = {
     );
     return get(`/series${q.toString() ? `?${q}` : ""}`);
   },
+  periods: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")
+    );
+    return get(`/series/periods?${q}`);
+  },
   observations: (seriesId) => get(`/series/${encodeURIComponent(seriesId)}/observations`),
   municipalities: (params = {}) => {
     const q = new URLSearchParams(

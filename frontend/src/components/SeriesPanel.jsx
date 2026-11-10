@@ -21,6 +21,7 @@ export default function SeriesPanel({ payload }) {
   const { series, observations, quality, attribution } = payload;
   const data = observations.map((o) => ({
     period: o.period_start,
+    periodLabel: o.period?.label ?? o.period_start,
     value: o.original_value === null ? null : Number(o.original_value),
     flagged: o.quality_flag !== "ok" && o.original_value !== null ? Number(o.original_value) : null,
     flag: o.quality_flag,
@@ -46,6 +47,7 @@ export default function SeriesPanel({ payload }) {
             <YAxis tick={{ fontSize: 11 }} width={52} />
             <Tooltip
               contentStyle={{ fontSize: 12 }}
+              labelFormatter={(_, rows) => rows?.[0]?.payload?.periodLabel ?? ""}
               formatter={(v, name) => [v, name === "flagged" ? "flagged value" : series.unit]}
             />
             <Line
@@ -60,6 +62,13 @@ export default function SeriesPanel({ payload }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {observations.length > 0 && observations.at(-1)?.period && (
+        <p className="mt-2 text-xs text-slate-600">
+          Latest slot: {observations.at(-1).period.month_label} {observations.at(-1).period.year}
+          {" · "}{observations.at(-1).period.quarter_label}{" · "}{observations.at(-1).period.year}
+        </p>
+      )}
 
       <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <div className="rounded bg-slate-50 p-2">

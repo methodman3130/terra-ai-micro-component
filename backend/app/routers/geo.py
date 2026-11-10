@@ -17,6 +17,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 
 from app import db
+from app.routers.series import period_context
 
 router = APIRouter(prefix="/geo", tags=["geo"])
 
@@ -41,10 +42,10 @@ def municipalities(
     sql = """
         SELECT m.psgc_code, m.name, m.province_name, m.psgc_vintage, m.source_note,
                ST_AsGeoJSON(ST_SimplifyPreserveTopology(m.geom, :tol))::json AS geometry,
-               v.value, v.unit, v.quality_flag, v.series_id, v.period_start
+               v.value, v.unit, v.quality_flag, v.series_id, v.period_start, v.frequency
         FROM municipality m
         LEFT JOIN LATERAL (
-            SELECT o.original_value AS value, s.unit, o.quality_flag, o.period_start, s.series_id
+            SELECT o.original_value AS value, s.unit, o.quality_flag, o.period_start, s.series_id, s.frequency
             FROM series s
             JOIN observation o ON o.series_id = s.series_id
             -- "Latest" must mean latest PUBLISHED. The panel runs to 2026-12 but
@@ -116,6 +117,14 @@ def municipalities(
                 "Farm-level polygons are not shown because no public layer exists."
             ),
             "n_without_data": sum(1 for f in features if not f["properties"]["has_data"]),
+            "period": (
+                period_context(next(
+                    (r["period_start"] for r in found if r["period_start"] is not None),
+                    None,
+                ), next((r["frequency"] for r in found if r["period_start"] is not None), "monthly"))
+                if any(r["period_start"] is not None for r in found)
+                else None
+            ),
         },
     }
 

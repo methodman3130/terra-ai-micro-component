@@ -58,6 +58,8 @@ function Panel({ onMethods }) {
   const [commodities, setCommodities] = useState(FALLBACK_COMMODITIES);
   const [commodity, setCommodity] = useState(FALLBACK_COMMODITIES[0]);
   const [variable, setVariable] = useState("farmgate_price");
+  const [periods, setPeriods] = useState([]);
+  const [period, setPeriod] = useState("");
   const [geo, setGeo] = useState(null);
   const [selected, setSelected] = useState(null);
   const [selectedSeries, setSelectedSeries] = useState(null);
@@ -86,12 +88,23 @@ function Panel({ onMethods }) {
   }, []);
 
   useEffect(() => {
+    setPeriod("");
+    api.periods({ commodity, variable })
+      .then((r) => {
+        const available = r.periods ?? [];
+        setPeriods(available);
+        setPeriod(available[0]?.value ?? "");
+      })
+      .catch(() => setPeriods([]));
+  }, [commodity, variable]);
+
+  useEffect(() => {
     setError(null);
     api
-      .municipalities({ province_code: BENGUET, commodity, variable })
+      .municipalities({ province_code: BENGUET, commodity, variable, period })
       .then(setGeo)
       .catch((e) => setError(e.message));
-  }, [commodity, variable]);
+  }, [commodity, variable, period]);
 
   // The geo response carries the series_id that shades each polygon, so a
   // click resolves directly instead of re-deriving it from a geography code —
@@ -140,6 +153,20 @@ function Panel({ onMethods }) {
             >
               {commodities.map((c) => (
                 <option key={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              disabled={!periods.length}
+              aria-label="Reporting period"
+              className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-uc-green focus:outline-none disabled:bg-slate-100"
+            >
+              {!periods.length && <option>No published period</option>}
+              {periods.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label} · {p.frequency}
+                </option>
               ))}
             </select>
             <select
@@ -221,6 +248,13 @@ function Panel({ onMethods }) {
             {geo.metadata.grain_warning} Boundary source: {geo.metadata.boundary_source}; PSGC vintage{" "}
             {geo.metadata.psgc_vintage ?? "unknown"}. Municipalities without an observation:{" "}
             {geo.metadata.n_without_data}.
+          </p>
+        )}
+
+        {geo?.metadata?.period && (
+          <p className="rounded border border-uc-green/20 bg-white px-3 py-2 text-xs text-slate-700">
+            <strong>Reporting period:</strong> {geo.metadata.period.month_label} {geo.metadata.period.year}
+            {" · "}{geo.metadata.period.quarter_label}{" · "}{geo.metadata.period.year}
           </p>
         )}
 
