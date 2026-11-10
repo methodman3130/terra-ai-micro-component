@@ -5,7 +5,7 @@ import { Brand, PineRule } from "./Brand";
 
 const MIN_PASSWORD = 12;
 
-export default function AuthScreen() {
+export default function AuthScreen({ onMethods }) {
   const { signIn } = useAuth();
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -141,8 +141,23 @@ export default function AuthScreen() {
 
           <p className="mt-4 text-center text-[11px] leading-snug text-slate-500">
             Research prototype. PSA OpenSTAT data under CC BY 4.0; PSA does not endorse
-            this use.
+            this use. Monthly, province-level statistics; not municipal or farm
+            observations, not real-time, not decision advice. No forecasts are issued.
           </p>
+          {onMethods && (
+            <p className="mt-2 text-center text-xs">
+              <button
+                type="button"
+                onClick={onMethods}
+                className="font-medium text-uc-green-dark underline underline-offset-2 hover:text-uc-green"
+              >
+                Methods, data provenance and fitness
+              </button>
+              <span className="block text-[11px] text-slate-500">
+                Readable without an account
+              </span>
+            </p>
+          )}
         </div>
       </div>
     </div>
