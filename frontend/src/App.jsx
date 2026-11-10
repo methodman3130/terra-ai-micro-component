@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import AuthScreen from "./components/AuthScreen";
 import AdminPanel from "./components/AdminPanel";
 import { Brand, PineRule } from "./components/Brand";
+import MethodsPage from "./components/MethodsPage";
 
 const BENGUET = "1401100000"; // PSGC: province digits are positions 3-5
 // Commodities are whatever the register actually holds. Hard-coding them meant
@@ -32,6 +33,7 @@ export default function App() {
 /** Nothing but the sign-in screen renders until the session is resolved. */
 function Gate() {
   const { user, ready } = useAuth();
+  const [methods, setMethods] = useState(false);
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-uc-mist text-sm text-slate-500">
@@ -39,10 +41,16 @@ function Gate() {
       </div>
     );
   }
-  return user ? <Panel /> : <AuthScreen />;
+  // The methods page is reachable without an account. The curated series are not.
+  if (methods) return <MethodsPage onBack={() => setMethods(false)} />;
+  return user ? (
+    <Panel onMethods={() => setMethods(true)} />
+  ) : (
+    <AuthScreen onMethods={() => setMethods(true)} />
+  );
 }
 
-function Panel() {
+function Panel({ onMethods }) {
   const { user, isAdmin, signOut } = useAuth();
   const [adminOpen, setAdminOpen] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -151,6 +159,12 @@ function Panel() {
             >
               Provenance
             </button>
+            <button
+              onClick={onMethods}
+              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-uc-mist"
+            >
+              Methods &amp; fitness
+            </button>
             {isAdmin && (
               <button
                 onClick={() => setAdminOpen(true)}
@@ -209,6 +223,12 @@ function Panel() {
             {geo.metadata.n_without_data}.
           </p>
         )}
+
+        <p className="rounded border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+          <strong>Monthly, province-level published statistics.</strong> Not municipal or
+          farm observations, not real-time, and not decision advice. Panels below show
+          retrospective back-test scores only; no forecast is issued for any series.
+        </p>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <SeriesPanel payload={observations} />
