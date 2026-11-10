@@ -33,6 +33,16 @@ def period_context(value: date, frequency: str = "monthly") -> dict[str, int | s
             "quarter_label": "Not applicable (annual series)",
             "label": f"Annual · {value.year}",
         }
+    if frequency == "quarterly":
+        quarter = ((value.month - 1) // 3) + 1
+        return {
+            "year": value.year,
+            "month": None,
+            "quarter": quarter,
+            "month_label": "Not applicable (quarterly series)",
+            "quarter_label": f"Q{quarter}",
+            "label": f"Q{quarter} · {value.year}",
+        }
     quarter = ((value.month - 1) // 3) + 1
     return {
         "year": value.year,

@@ -1,4 +1,4 @@
-"""Load a downloaded PSA annual crop indicator CSV into TERRA-AI.
+"""Load a downloaded PSA quarterly crop indicator CSV into TERRA-AI.
 
 Use this for the PSA OpenSTAT *Production* and *Area Harvested* extracts.
 It intentionally accepts a saved CSV rather than retrieving from a web route:
@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -32,11 +33,18 @@ from app.services.attribution import STANDARD_MODIFICATIONS, render
 PROVINCE = {"code": "1401100000", "name": "Benguet"}
 
 
-def annual_period(raw: str) -> date:
-    """PSA annual columns must be a four-digit year; refuse ambiguous input."""
-    if not (len(raw) == 4 and raw.isdigit()):
-        raise ValueError(f"Expected an annual YYYY column, received {raw!r}")
-    return date(int(raw), 1, 1)
+def quarterly_period(raw: str) -> date:
+    """Resolve PSA's year/quarter display labels without guessing a month."""
+    text = raw.strip().casefold()
+    year = re.search(r"\b(20\d{2})\b", text)
+    quarter = re.search(r"(?:q(?:uarter)?\s*|\b)([1-4])(?:st|nd|rd|th)?\s*(?:quarter)?\b", text)
+    if not year or not quarter:
+        raise ValueError(f"Expected a year-and-quarter column, received {raw!r}")
+    return date(int(year.group(1)), 1 + (int(quarter.group(1)) - 1) * 3, 1)
+
+
+def next_quarter(value: date) -> date:
+    return date(value.year + (value.month == 10), 1 if value.month == 10 else value.month + 3, 1)
 
 
 def main() -> int:
@@ -75,7 +83,7 @@ def main() -> int:
 
     grouped: dict[str, list[tuple[date, str]]] = {}
     for row in selected:
-        grouped.setdefault(row[commodity_key].strip(), []).append((annual_period(row["period"]), row["value"].strip()))
+        grouped.setdefault(row[commodity_key].strip(), []).append((quarterly_period(row["period"]), row["value"].strip()))
 
     with engine.begin() as conn:
         extract_id = conn.execute(text("""
@@ -92,18 +100,18 @@ def main() -> int:
         """), {
             "table": args.table, "title": args.title, "url": args.source_url,
             "dimensions": json.dumps({"Geolocation": ["Benguet"]}),
-            "retrieved": retrieved_at, "period": "annual", "vintage": retrieved_at[:7],
+            "retrieved": retrieved_at, "period": "quarterly", "vintage": retrieved_at[:7],
             "checksum": checksum, "path": str(args.csv.resolve()), "attribution": attribution.text,
         }).scalar_one()
 
         for commodity, points in grouped.items():
-            key = SeriesKey(commodity, args.variable, PROVINCE["code"], "annual", args.unit)
+            key = SeriesKey(commodity, args.variable, PROVINCE["code"], "quarterly", args.unit)
             published = [period for period, raw in points if raw not in ("", "..")]
             conn.execute(text("""
                 INSERT INTO series (series_id, commodity, variable, geography_code,
                   geography_name, geography_level, frequency, unit, extract_id, frozen_at, frozen_hash, notes)
-                VALUES (:sid, :commodity, :variable, :code, :name, 'province', 'annual', :unit,
-                  :extract_id, now(), :frozen_hash, 'PSA annual province-level crop statistic.')
+                VALUES (:sid, :commodity, :variable, :code, :name, 'province', 'quarterly', :unit,
+                  :extract_id, now(), :frozen_hash, 'PSA quarterly province-level crop statistic.')
                 ON CONFLICT (series_id) DO UPDATE SET extract_id = EXCLUDED.extract_id,
                   frozen_at = EXCLUDED.frozen_at, frozen_hash = EXCLUDED.frozen_hash
             """), {"sid": key.series_id, "commodity": commodity, "variable": args.variable,
@@ -119,7 +127,7 @@ def main() -> int:
                     ON CONFLICT (series_id, period_start) DO UPDATE SET
                       original_value = EXCLUDED.original_value, curated_value = EXCLUDED.curated_value,
                       missing_reason = EXCLUDED.missing_reason
-                """), {"sid": key.series_id, "start": period, "end": date(period.year + 1, 1, 1), "value": value})
+                """), {"sid": key.series_id, "start": period, "end": next_quarter(period), "value": value})
     return 0
 
 
