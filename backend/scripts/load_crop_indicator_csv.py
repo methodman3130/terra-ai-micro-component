@@ -153,11 +153,12 @@ def main() -> int:
                     INSERT INTO observation (series_id, period_start, period_end, original_value,
                       curated_value, missing_reason, quality_flag)
                     VALUES (:sid, :start, :end, :value, :value,
-                      CASE WHEN :value IS NULL THEN 'absent' END, 'ok')
+                      :missing_reason, 'ok')
                     ON CONFLICT (series_id, period_start) DO UPDATE SET
                       original_value = EXCLUDED.original_value, curated_value = EXCLUDED.curated_value,
                       missing_reason = EXCLUDED.missing_reason
-                """), {"sid": key.series_id, "start": period, "end": next_quarter(period), "value": value})
+                """), {"sid": key.series_id, "start": period, "end": next_quarter(period),
+                         "value": value, "missing_reason": "absent" if value is None else None})
     return 0
 
 
