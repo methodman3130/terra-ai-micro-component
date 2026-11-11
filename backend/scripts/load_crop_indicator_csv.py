@@ -147,9 +147,16 @@ def main() -> int:
             """), {"sid": key.series_id, "commodity": commodity, "variable": args.variable,
                   "code": PROVINCE["code"], "name": PROVINCE["name"], "unit": args.unit,
                   "extract_id": extract_id, "frozen_hash": freeze_hash(published)})
+            observation_rows = []
             for period, raw in points:
                 value = float(raw) if raw not in ("", "..") else None
-                conn.execute(text("""
+                observation_rows.append({
+                    "sid": key.series_id, "start": period, "end": next_quarter(period),
+                    "value": value, "missing_reason": "absent" if value is None else None,
+                })
+            # Execute the commodity's rows together. This avoids a network round
+            # trip to Neon for every individual quarter.
+            conn.execute(text("""
                     INSERT INTO observation (series_id, period_start, period_end, original_value,
                       curated_value, missing_reason, quality_flag)
                     VALUES (:sid, :start, :end, :value, :value,
@@ -157,8 +164,7 @@ def main() -> int:
                     ON CONFLICT (series_id, period_start) DO UPDATE SET
                       original_value = EXCLUDED.original_value, curated_value = EXCLUDED.curated_value,
                       missing_reason = EXCLUDED.missing_reason
-                """), {"sid": key.series_id, "start": period, "end": next_quarter(period),
-                         "value": value, "missing_reason": "absent" if value is None else None})
+                """), observation_rows)
     return 0
 
 
