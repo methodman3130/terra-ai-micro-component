@@ -95,6 +95,7 @@ def main() -> int:
     ]
     if not selected:
         raise SystemExit("No Benguet rows found. Check --key-columns and the selected OpenSTAT CSV.")
+    print(f"Preparing {len(selected)} Benguet crop rows from {args.csv.name}...", flush=True)
 
     checksum = hashlib.sha256(payload).hexdigest()
     retrieved = args.csv.stat().st_mtime
@@ -115,6 +116,7 @@ def main() -> int:
     if not grouped:
         raise SystemExit("No quarterly columns found. Export Quarter1–Quarter4 from OpenSTAT.")
 
+    print(f"Connecting to Neon and saving {len(grouped)} quarterly series...", flush=True)
     with engine.begin() as conn:
         extract_id = conn.execute(text("""
             INSERT INTO source_extract
@@ -165,6 +167,7 @@ def main() -> int:
                       original_value = EXCLUDED.original_value, curated_value = EXCLUDED.curated_value,
                       missing_reason = EXCLUDED.missing_reason
                 """), observation_rows)
+    print(f"Finished {args.variable}: {len(grouped)} series saved.", flush=True)
     return 0
 
 
