@@ -14,6 +14,8 @@ Example (run twice, once for each variable)::
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import hashlib
 import json
 import re
@@ -26,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import create_engine, text
 
 from app.config import settings
-from app.etl.openstat import parse_csv, to_long
+from app.etl.openstat import to_long
 from app.etl.registry import SeriesKey, freeze_hash
 from app.services.attribution import STANDARD_MODIFICATIONS, render
 
@@ -47,6 +49,17 @@ def next_quarter(value: date) -> date:
     return date(value.year + (value.month == 10), 1 if value.month == 10 else value.month + 3, 1)
 
 
+def parse_openstat_export(payload: bytes) -> tuple[list[str], list[list[str]]]:
+    """Read a downloaded PXWeb CSV, including its one-line title preamble."""
+    rows = [row for row in csv.reader(io.StringIO(payload.decode("utf-8-sig"))) if any(cell.strip() for cell in row)]
+    if len(rows) < 2:
+        raise ValueError("OpenSTAT CSV has no header and data rows")
+    # PSA exports place the table title on its own first row.
+    if len(rows[0]) == 1 and len(rows[1]) > 2:
+        rows = rows[1:]
+    return [cell.strip() for cell in rows[0]], rows[1:]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variable", choices=("production", "area_harvested"), required=True)
@@ -59,14 +72,18 @@ def main() -> int:
     args = parser.parse_args()
 
     payload = args.csv.read_bytes()
-    header, rows = parse_csv(payload)
+    header, rows = parse_openstat_export(payload)
     values = to_long(header, rows, args.key_columns)
     if len(header) < 3:
         raise SystemExit("CSV has no annual value columns")
     # The first two columns are the selected geography and commodity under the
     # documented OpenSTAT production/area extracts. Keep only Benguet rows;
     # comparing case-insensitively tolerates PSA's display casing.
-    geography_key, commodity_key = header[:2]
+    try:
+        geography_key = next(key for key in header if key.strip().casefold() == "geolocation")
+        commodity_key = next(key for key in header if key.strip().casefold() in ("crop", "commodity"))
+    except StopIteration as exc:
+        raise SystemExit("Expected Crop/Commodity and Geolocation columns in the OpenSTAT CSV.") from exc
     selected = [
         row for row in values
         if row[geography_key].strip().casefold() == "benguet" and row[commodity_key].strip()
@@ -83,7 +100,15 @@ def main() -> int:
 
     grouped: dict[str, list[tuple[date, str]]] = {}
     for row in selected:
-        grouped.setdefault(row[commodity_key].strip(), []).append((quarterly_period(row["period"]), row["value"].strip()))
+        # The export also contains Annual totals. They remain in the raw CSV,
+        # but the dashboard's quarterly series must not double-count them.
+        try:
+            period = quarterly_period(row["period"])
+        except ValueError:
+            continue
+        grouped.setdefault(row[commodity_key].strip(), []).append((period, row["value"].strip()))
+    if not grouped:
+        raise SystemExit("No quarterly columns found. Export Quarter1–Quarter4 from OpenSTAT.")
 
     with engine.begin() as conn:
         extract_id = conn.execute(text("""
