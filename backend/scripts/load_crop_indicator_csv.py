@@ -35,6 +35,11 @@ from app.services.attribution import STANDARD_MODIFICATIONS, render
 PROVINCE = {"code": "1401100000", "name": "Benguet"}
 
 
+def is_benguet(value: str) -> bool:
+    """Match PSA's plain `Benguet` and its hierarchical `....Benguet` label."""
+    return value.strip().lstrip(".").strip().casefold() == "benguet"
+
+
 def quarterly_period(raw: str) -> date:
     """Resolve PSA's year/quarter display labels without guessing a month."""
     text = raw.strip().casefold()
@@ -86,7 +91,7 @@ def main() -> int:
         raise SystemExit("Expected Crop/Commodity and Geolocation columns in the OpenSTAT CSV.") from exc
     selected = [
         row for row in values
-        if row[geography_key].strip().casefold() == "benguet" and row[commodity_key].strip()
+        if is_benguet(row[geography_key]) and row[commodity_key].strip()
     ]
     if not selected:
         raise SystemExit("No Benguet rows found. Check --key-columns and the selected OpenSTAT CSV.")
