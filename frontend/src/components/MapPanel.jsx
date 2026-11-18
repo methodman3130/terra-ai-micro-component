@@ -33,7 +33,7 @@ function centre(geometry) {
   return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 
-export default function MapPanel({ featureCollection, unit, onSelect, selectedCode }) {
+export default function MapPanel({ featureCollection, unit, onSelect, selectedCode, heightClass = "h-[460px]" }) {
   const [hover, setHover] = useState(null);
 
   const { data, fillExpression, withoutData } = useMemo(() => {
@@ -57,7 +57,7 @@ export default function MapPanel({ featureCollection, unit, onSelect, selectedCo
   }, [featureCollection]);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-lg border border-slate-200">
+    <div className={`relative w-full overflow-hidden rounded-lg border border-slate-200 ${heightClass}`}>
       <Map
         initialViewState={{ longitude: 120.65, latitude: 16.55, zoom: 8.4 }}
         mapStyle={{

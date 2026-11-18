@@ -10,6 +10,7 @@ import AuthScreen from "./components/AuthScreen";
 import AdminPanel from "./components/AdminPanel";
 import { Brand, PineRule } from "./components/Brand";
 import MethodsPage from "./components/MethodsPage";
+import FarmerView from "./components/FarmerView";
 
 const BENGUET = "1401100000"; // PSGC: province digits are positions 3-5
 // Commodities are whatever the register actually holds. Hard-coding them meant
@@ -34,6 +35,23 @@ export default function App() {
 function Gate() {
   const { user, ready } = useAuth();
   const [methods, setMethods] = useState(false);
+  // Two audiences, one dataset. The research panels answer "is this record
+  // trustworthy"; the farmer view answers "when do I cut and what will it pay".
+  // Phones get the farmer view by default because nobody reads a benchmark
+  // table on a 5-inch screen — but the choice is sticky once made either way.
+  const [farmer, setFarmer] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.location.hash === "#farmer") return true;
+    if (window.location.hash === "#research") return false;
+    const saved = localStorage.getItem("terra.view");
+    if (saved) return saved === "farmer";
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
+  const chooseView = (isFarmer) => {
+    setFarmer(isFarmer);
+    try { localStorage.setItem("terra.view", isFarmer ? "farmer" : "research"); } catch { /* private mode */ }
+    window.location.hash = isFarmer ? "farmer" : "research";
+  };
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-uc-mist text-sm text-slate-500">
@@ -43,14 +61,12 @@ function Gate() {
   }
   // The methods page is reachable without an account. The curated series are not.
   if (methods) return <MethodsPage onBack={() => setMethods(false)} />;
-  return user ? (
-    <Panel onMethods={() => setMethods(true)} />
-  ) : (
-    <AuthScreen onMethods={() => setMethods(true)} />
-  );
+  if (!user) return <AuthScreen onMethods={() => setMethods(true)} />;
+  if (farmer) return <FarmerView onExit={() => chooseView(false)} />;
+  return <Panel onMethods={() => setMethods(true)} onFarmer={() => chooseView(true)} />;
 }
 
-function Panel({ onMethods }) {
+function Panel({ onMethods, onFarmer }) {
   const { user, isAdmin, signOut } = useAuth();
   const [adminOpen, setAdminOpen] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -192,6 +208,12 @@ function Panel({ onMethods }) {
             >
               Methods &amp; fitness
             </button>
+            <button
+              onClick={onFarmer}
+              className="rounded border border-uc-green/40 bg-uc-green/5 px-3 py-1 text-sm font-medium text-uc-green-dark hover:bg-uc-green/10"
+            >
+              Farmer view
+            </button>
             {isAdmin && (
               <button
                 onClick={() => setAdminOpen(true)}
@@ -232,41 +254,49 @@ function Panel({ onMethods }) {
           </div>
         )}
 
-        <MapPanel
-          featureCollection={geo}
-          unit={unit}
-          selectedCode={selected}
-          onSelect={(code) => {
-            setSelected(code);
-            const f = geo?.features?.find((x) => x.properties.psgc_code === code);
-            if (f?.properties?.series_id) setSelectedSeries(f.properties.series_id);
-          }}
-        />
+        {/* Map left, everything that reads against it right. The map is the one
+            element that benefits from height rather than width, so it sticks to
+            the viewport on wide screens while the panels scroll beside it. Below
+            lg the two columns collapse back to the original single stack. */}
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-2 lg:sticky lg:top-4">
+            <MapPanel
+              heightClass="h-[420px] lg:h-[calc(100vh-10rem)] lg:min-h-[520px] lg:max-h-[780px]"
+              featureCollection={geo}
+              unit={unit}
+              selectedCode={selected}
+              onSelect={(code) => {
+                setSelected(code);
+                const f = geo?.features?.find((x) => x.properties.psgc_code === code);
+                if (f?.properties?.series_id) setSelectedSeries(f.properties.series_id);
+              }}
+            />
+            {geo?.metadata && (
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                {geo.metadata.grain_warning} Boundary source: {geo.metadata.boundary_source}; PSGC vintage{" "}
+                {geo.metadata.psgc_vintage ?? "unknown"}. Municipalities without an observation:{" "}
+                {geo.metadata.n_without_data}.
+              </p>
+            )}
+          </div>
 
-        {geo?.metadata && (
-          <p className="text-[11px] text-slate-500">
-            {geo.metadata.grain_warning} Boundary source: {geo.metadata.boundary_source}; PSGC vintage{" "}
-            {geo.metadata.psgc_vintage ?? "unknown"}. Municipalities without an observation:{" "}
-            {geo.metadata.n_without_data}.
-          </p>
-        )}
+          <div className="min-w-0 space-y-4">
+            {geo?.metadata?.period && (
+              <p className="rounded border border-uc-green/20 bg-white px-3 py-2 text-xs text-slate-700">
+                <strong>Reporting period:</strong> {geo.metadata.period.month_label} {geo.metadata.period.year}
+                {" · "}{geo.metadata.period.quarter_label}{" · "}{geo.metadata.period.year}
+              </p>
+            )}
 
-        {geo?.metadata?.period && (
-          <p className="rounded border border-uc-green/20 bg-white px-3 py-2 text-xs text-slate-700">
-            <strong>Reporting period:</strong> {geo.metadata.period.month_label} {geo.metadata.period.year}
-            {" · "}{geo.metadata.period.quarter_label}{" · "}{geo.metadata.period.year}
-          </p>
-        )}
+            <p className="rounded border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+              <strong>Monthly, province-level published statistics.</strong> Not municipal or
+              farm observations, not real-time, and not decision advice. The panels here show
+              retrospective back-test scores only; no forecast is issued for any series.
+            </p>
 
-        <p className="rounded border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
-          <strong>Monthly, province-level published statistics.</strong> Not municipal or
-          farm observations, not real-time, and not decision advice. Panels below show
-          retrospective back-test scores only; no forecast is issued for any series.
-        </p>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <SeriesPanel payload={observations} />
-          <BenchmarkPanel payload={benchmark} error={benchmarkError} />
+            <SeriesPanel payload={observations} />
+            <BenchmarkPanel payload={benchmark} error={benchmarkError} />
+          </div>
         </div>
       </main>
 
