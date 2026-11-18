@@ -33,7 +33,7 @@ function centre(geometry) {
   return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 
-export default function MapPanel({ featureCollection, unit, onSelect, selectedCode }) {
+export default function MapPanel({ featureCollection, unit, onSelect, selectedCode, heightClass = "h-[460px]" }) {
   const [hover, setHover] = useState(null);
 
   const { data, fillExpression, withoutData } = useMemo(() => {
@@ -57,7 +57,7 @@ export default function MapPanel({ featureCollection, unit, onSelect, selectedCo
   }, [featureCollection]);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-lg border border-slate-200">
+    <div className={`relative w-full overflow-hidden rounded-lg border border-slate-200 ${heightClass}`}>
       <Map
         initialViewState={{ longitude: 120.65, latitude: 16.55, zoom: 8.4 }}
         mapStyle={{
@@ -66,7 +66,22 @@ export default function MapPanel({ featureCollection, unit, onSelect, selectedCo
           layers: [{ id: "bg", type: "background", paint: { "background-color": "#f8fafc" } }],
         }}
         interactiveLayerIds={["municipality-fill"]}
-        onMouseMove={(e) => setHover(e.features?.[0] ?? null)}
+        // Anchor the popup to the POINTER, not to the feature.
+        //
+        // A queried feature here is a MultiPolygon, so geometry.coordinates[0]
+        // is a ring of positions, not a longitude. Passing that to <Popup>
+        // produced an invalid LngLat, which threw during render and took the
+        // whole map down — the map "disappeared on hover". Carry the pointer
+        // position instead; it is always two finite numbers.
+        onMouseMove={(e) => {
+          const f = e.features?.[0];
+          const { lng, lat } = e.lngLat ?? {};
+          setHover(
+            f && Number.isFinite(lng) && Number.isFinite(lat)
+              ? { properties: f.properties, lng, lat }
+              : null
+          );
+        }}
         onMouseLeave={() => setHover(null)}
         onClick={(e) => {
           const f = e.features?.[0];
@@ -105,9 +120,10 @@ export default function MapPanel({ featureCollection, unit, onSelect, selectedCo
 
         {hover && (
           <Popup
-            longitude={hover.geometry?.coordinates?.[0] ?? 120.65}
-            latitude={hover.geometry?.coordinates?.[1] ?? 16.55}
+            longitude={hover.lng}
+            latitude={hover.lat}
             closeButton={false}
+            closeOnClick={false}
             className="text-xs"
           >
             <div className="font-semibold">{hover.properties.name}</div>

@@ -9,9 +9,14 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import AuthScreen from "./components/AuthScreen";
 import AdminPanel from "./components/AdminPanel";
 import { Brand, PineRule } from "./components/Brand";
+import MethodsPage from "./components/MethodsPage";
+import FarmerView from "./components/FarmerView";
 
 const BENGUET = "1401100000"; // PSGC: province digits are positions 3-5
-const COMMODITIES = ["Cabbage", "Carrot"];
+// Commodities are whatever the register actually holds. Hard-coding them meant
+// Potato was loaded but unreachable from the UI, and every new crop needed a
+// frontend release to become visible.
+const FALLBACK_COMMODITIES = ["Cabbage", "Carrot", "Potato"];
 const VARIABLES = [
   { key: "farmgate_price", label: "Farmgate price" },
   { key: "production", label: "Production" },
@@ -29,6 +34,24 @@ export default function App() {
 /** Nothing but the sign-in screen renders until the session is resolved. */
 function Gate() {
   const { user, ready } = useAuth();
+  const [methods, setMethods] = useState(false);
+  // Two audiences, one dataset. The research panels answer "is this record
+  // trustworthy"; the farmer view answers "when do I cut and what will it pay".
+  // Phones get the farmer view by default because nobody reads a benchmark
+  // table on a 5-inch screen — but the choice is sticky once made either way.
+  const [farmer, setFarmer] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.location.hash === "#farmer") return true;
+    if (window.location.hash === "#research") return false;
+    const saved = localStorage.getItem("terra.view");
+    if (saved) return saved === "farmer";
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
+  const chooseView = (isFarmer) => {
+    setFarmer(isFarmer);
+    try { localStorage.setItem("terra.view", isFarmer ? "farmer" : "research"); } catch { /* private mode */ }
+    window.location.hash = isFarmer ? "farmer" : "research";
+  };
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-uc-mist text-sm text-slate-500">
@@ -36,16 +59,23 @@ function Gate() {
       </div>
     );
   }
-  return user ? <Panel /> : <AuthScreen />;
+  // The methods page is reachable without an account. The curated series are not.
+  if (methods) return <MethodsPage onBack={() => setMethods(false)} />;
+  if (!user) return <AuthScreen onMethods={() => setMethods(true)} />;
+  if (farmer) return <FarmerView onExit={() => chooseView(false)} />;
+  return <Panel onMethods={() => setMethods(true)} onFarmer={() => chooseView(true)} />;
 }
 
-function Panel() {
+function Panel({ onMethods, onFarmer }) {
   const { user, isAdmin, signOut } = useAuth();
   const [adminOpen, setAdminOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [health, setHealth] = useState(null);
-  const [commodity, setCommodity] = useState(COMMODITIES[0]);
+  const [commodities, setCommodities] = useState(FALLBACK_COMMODITIES);
+  const [commodity, setCommodity] = useState(FALLBACK_COMMODITIES[0]);
   const [variable, setVariable] = useState("farmgate_price");
+  const [periods, setPeriods] = useState([]);
+  const [period, setPeriod] = useState("");
   const [geo, setGeo] = useState(null);
   const [selected, setSelected] = useState(null);
   const [selectedSeries, setSelectedSeries] = useState(null);
@@ -58,15 +88,39 @@ function Panel() {
   useEffect(() => {
     api.notice().then(setNotice).catch(() => {});
     api.health().then(setHealth).catch(() => setHealth({ database: "unavailable" }));
+    // Populate the picker from the series register rather than a constant, so
+    // loading a new crop makes it selectable without a frontend release. The
+    // fallback only covers the case where /series is unreachable.
+    api
+      .series()
+      .then((r) => {
+        const names = [...new Set((r.series ?? []).map((s) => s.commodity))].sort();
+        if (names.length) {
+          setCommodities(names);
+          setCommodity((c) => (names.includes(c) ? c : names[0]));
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setPeriod("");
+    api.periods({ commodity, variable })
+      .then((r) => {
+        const available = r.periods ?? [];
+        setPeriods(available);
+        setPeriod(available[0]?.value ?? "");
+      })
+      .catch(() => setPeriods([]));
+  }, [commodity, variable]);
 
   useEffect(() => {
     setError(null);
     api
-      .municipalities({ province_code: BENGUET, commodity, variable })
+      .municipalities({ province_code: BENGUET, commodity, variable, period })
       .then(setGeo)
       .catch((e) => setError(e.message));
-  }, [commodity, variable]);
+  }, [commodity, variable, period]);
 
   // The geo response carries the series_id that shades each polygon, so a
   // click resolves directly instead of re-deriving it from a geography code —
@@ -113,8 +167,22 @@ function Panel() {
               onChange={(e) => setCommodity(e.target.value)}
               className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-uc-green focus:outline-none"
             >
-              {COMMODITIES.map((c) => (
+              {commodities.map((c) => (
                 <option key={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              disabled={!periods.length}
+              aria-label="Reporting period"
+              className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-uc-green focus:outline-none disabled:bg-slate-100"
+            >
+              {!periods.length && <option>No published period</option>}
+              {periods.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label} · {p.frequency}
+                </option>
               ))}
             </select>
             <select
@@ -133,6 +201,18 @@ function Panel() {
               className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-uc-mist"
             >
               Provenance
+            </button>
+            <button
+              onClick={onMethods}
+              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-uc-mist"
+            >
+              Methods &amp; fitness
+            </button>
+            <button
+              onClick={onFarmer}
+              className="rounded border border-uc-green/40 bg-uc-green/5 px-3 py-1 text-sm font-medium text-uc-green-dark hover:bg-uc-green/10"
+            >
+              Farmer view
             </button>
             {isAdmin && (
               <button
@@ -174,28 +254,49 @@ function Panel() {
           </div>
         )}
 
-        <MapPanel
-          featureCollection={geo}
-          unit={unit}
-          selectedCode={selected}
-          onSelect={(code) => {
-            setSelected(code);
-            const f = geo?.features?.find((x) => x.properties.psgc_code === code);
-            if (f?.properties?.series_id) setSelectedSeries(f.properties.series_id);
-          }}
-        />
+        {/* Map left, everything that reads against it right. The map is the one
+            element that benefits from height rather than width, so it sticks to
+            the viewport on wide screens while the panels scroll beside it. Below
+            lg the two columns collapse back to the original single stack. */}
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-2 lg:sticky lg:top-4">
+            <MapPanel
+              heightClass="h-[420px] lg:h-[calc(100vh-10rem)] lg:min-h-[520px] lg:max-h-[780px]"
+              featureCollection={geo}
+              unit={unit}
+              selectedCode={selected}
+              onSelect={(code) => {
+                setSelected(code);
+                const f = geo?.features?.find((x) => x.properties.psgc_code === code);
+                if (f?.properties?.series_id) setSelectedSeries(f.properties.series_id);
+              }}
+            />
+            {geo?.metadata && (
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                {geo.metadata.grain_warning} Boundary source: {geo.metadata.boundary_source}; PSGC vintage{" "}
+                {geo.metadata.psgc_vintage ?? "unknown"}. Municipalities without an observation:{" "}
+                {geo.metadata.n_without_data}.
+              </p>
+            )}
+          </div>
 
-        {geo?.metadata && (
-          <p className="text-[11px] text-slate-500">
-            {geo.metadata.grain_warning} Boundary source: {geo.metadata.boundary_source}; PSGC vintage{" "}
-            {geo.metadata.psgc_vintage ?? "unknown"}. Municipalities without an observation:{" "}
-            {geo.metadata.n_without_data}.
-          </p>
-        )}
+          <div className="min-w-0 space-y-4">
+            {geo?.metadata?.period && (
+              <p className="rounded border border-uc-green/20 bg-white px-3 py-2 text-xs text-slate-700">
+                <strong>Reporting period:</strong> {geo.metadata.period.month_label} {geo.metadata.period.year}
+                {" · "}{geo.metadata.period.quarter_label}{" · "}{geo.metadata.period.year}
+              </p>
+            )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <SeriesPanel payload={observations} />
-          <BenchmarkPanel payload={benchmark} error={benchmarkError} />
+            <p className="rounded border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+              <strong>Monthly, province-level published statistics.</strong> Not municipal or
+              farm observations, not real-time, and not decision advice. The panels here show
+              retrospective back-test scores only; no forecast is issued for any series.
+            </p>
+
+            <SeriesPanel payload={observations} />
+            <BenchmarkPanel payload={benchmark} error={benchmarkError} />
+          </div>
         </div>
       </main>
 
